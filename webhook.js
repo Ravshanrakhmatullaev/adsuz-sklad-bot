@@ -129,7 +129,25 @@ async function handleCallback(query) {
   }
 }
 
+// ── Frontenddan xabar yuborish ──
+async function handleSend(body) {
+  const text = (body.text || '').slice(0, 4096);
+  if (!text) return { ok: false, error: "text maydon bo'sh" };
+  const chatId = body.chat_id || CHAT_ID;
+  const result = await tg('sendMessage', {
+    chat_id: chatId,
+    text: text,
+    parse_mode: 'HTML',
+  });
+  return result;
+}
+
 export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
   if (req.method === 'GET') {
     return res.status(200).json({ ok: true, message: 'AdsUz Bot ishlayapti!' });
   }
@@ -138,12 +156,23 @@ export default async function handler(req, res) {
   }
   try {
     const body = req.body;
+
+    // Frontend dan to'g'ridan xabar yuborish: { text: '...' }
+    if (body.text && !body.callback_query && !body.message) {
+      const result = await handleSend(body);
+      if (result && result.ok) {
+        return res.status(200).json({ ok: true, message_id: result.result && result.result.message_id });
+      }
+      return res.status(500).json({ ok: false, error: (result && result.description) || 'Telegram xato' });
+    }
+
+    // Telegram bot webhook events
     if (body.callback_query) {
       await handleCallback(body.callback_query);
     }
     res.status(200).json({ ok: true });
   } catch (err) {
     console.error('Bot error:', err);
-    res.status(200).json({ ok: true, error: err.message });
+    res.status(500).json({ ok: false, error: err.message });
   }
 }
